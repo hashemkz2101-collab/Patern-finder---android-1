@@ -3,11 +3,8 @@ name: Build APK from zip
 # مسیر فایل در مخزن: .github/workflows/build-apk-from-zip.yml
 # فایل zip پروژه را هر جای مخزن (و با هر نامی) آپلود کنید؛ این workflow خودش پیدایش می‌کند.
 on:
-  workflow_dispatch:          # دکمهٔ Run workflow در تب Actions
+  workflow_dispatch:
   push:
-    paths:
-      - "**.zip"
-      - ".github/workflows/build-apk-from-zip.yml"
 
 jobs:
   build:

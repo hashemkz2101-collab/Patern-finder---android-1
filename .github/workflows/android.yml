@@ -1,0 +1,78 @@
+name: Build APK from zip
+
+# مسیر فایل در مخزن: .github/workflows/build-apk-from-zip.yml
+# فایل zip پروژه را هر جای مخزن (و با هر نامی) آپلود کنید؛ این workflow خودش پیدایش می‌کند.
+on:
+  workflow_dispatch:          # دکمهٔ Run workflow در تب Actions
+  push:
+    paths:
+      - "**.zip"
+      - ".github/workflows/build-apk-from-zip.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find and unzip the project
+        id: find
+        shell: bash
+        run: |
+          set -e
+          DIR=""
+          # اگر پروژه از قبل باز شده در مخزن هست (settings.gradle.kts) همان را بساز
+          if [ -f settings.gradle.kts ]; then DIR="."; fi
+          if [ -z "$DIR" ]; then
+            while IFS= read -r -d '' z; do
+              if unzip -l "$z" 2>/dev/null | grep -q "settings.gradle.kts"; then
+                echo "Using zip: $z"
+                rm -rf _project && mkdir _project
+                unzip -q "$z" -d _project
+                DIR=$(dirname "$(find _project -name settings.gradle.kts | head -1)")
+                break
+              fi
+            done < <(find . -path ./_project -prune -o -iname "*.zip" -type f -print0)
+          fi
+          if [ -z "$DIR" ]; then
+            echo "::error::هیچ zip حاوی پروژه (settings.gradle.kts) در مخزن پیدا نشد."
+            exit 1
+          fi
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+          echo "Project dir: $DIR"
+          ls -la "$DIR"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # Chaquopy برای نصب numpy/opencv به پایتون 3.10 روی ماشین ساخت نیاز دارد
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      # Android SDK روی ubuntu-latest از قبل نصب است؛ فقط مجوزها را می‌پذیریم
+      - name: Accept Android SDK licenses
+        shell: bash
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          SM=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -1)
+          echo "sdkmanager: $SM"
+          if [ -n "$SM" ]; then yes | "$SM" --licenses > /dev/null || true; fi
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Build debug APK
+        working-directory: ${{ steps.find.outputs.dir }}
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PatternFinder-APK
+          path: ${{ steps.find.outputs.dir }}/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
